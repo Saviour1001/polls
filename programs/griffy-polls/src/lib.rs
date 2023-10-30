@@ -6,18 +6,90 @@ declare_id!("8fnHv1YLmMFHutXWsus7eZR1GsCYqaC3QKJ3ApLETw7U");
 pub mod griffy_polls {
     use super::*;
 
+    pub fn initialize_polls_counter(ctx: Context<InitializePollsCounter>) -> Result<()> {
+        let polls_counter = &mut ctx.accounts.polls_counter;
+        polls_counter.count = 0;
+        Ok(())
+    }
+    
+
     pub fn create_poll(ctx: Context<CreatePoll>, poll_topic : String, poll_options : Vec<String> ) -> Result<()> {
 
         let poll_data = &mut ctx.accounts.poll_data;
-        // poll_data.poll_id = ctx.accounts.polls_len.len;
-        poll_data.poll_topic = poll_topic;
+        
+        // assigning all data
+
+        poll_data.poll_topic = poll_topic; 
         poll_data.poll_options = poll_options;
         poll_data.creator = *ctx.accounts.creator.key;
         poll_data.voters = vec![];
         poll_data.votes = [0, 0];
-        // ctx.accounts.polls_len.len += 1;
+        poll_data.poll_id = ctx.accounts.polls_counter_account.count;
+
+        // incrementing polls_counter
+        ctx.accounts.polls_counter_account.count += 1;
+
+        // notifying the event
+        emit!(
+            PollCreated {
+                poll_id: poll_data.poll_id,
+                poll_topic: poll_data.poll_topic.clone(),
+                poll_options: poll_data.poll_options.clone(),
+                creator: poll_data.creator,
+            }
+        );
+
         Ok(())
     }
+
+    pub fn vote(ctx: Context<Vote>, poll_id: u64, option: u64) -> Result<()> {
+        let poll_data = &mut ctx.accounts.poll_data;
+        let votes_data = &mut ctx.accounts.votes_data;
+
+        // validating
+
+        if option > 1 {
+            return Err(ErrorCode::InvalidOption.into());
+        }
+
+        if poll_id != poll_data.poll_id {
+            return Err(ErrorCode::InvalidPollId.into());
+        }
+
+        if poll_data.voters.contains(&*ctx.accounts.voter.key) {
+            return Err(ErrorCode::AlreadyVoted.into());
+        }
+
+        // updating data
+
+        poll_data.voters.push(*ctx.accounts.voter.key);
+        poll_data.votes[option as usize] += 1;
+        votes_data.votes[option as usize] += 1;
+
+        // notifying the event
+
+        emit!(
+            PollVoted {
+                poll_id: poll_data.poll_id,
+                voter: *ctx.accounts.voter.key,
+                option: option,
+            }
+        );
+
+
+        Ok(())
+    }
+
+}
+
+
+#[derive(Accounts)]
+pub struct InitializePollsCounter<'info> {
+    #[account(init, payer = creator, space = 8 + 8)]
+    pub polls_counter: Account<'info, PollsCounter>,
+    #[account(mut)]
+    pub creator: Signer<'info>,
+    pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
@@ -26,7 +98,19 @@ pub struct CreatePoll<'info> {
     pub creator: Signer<'info>,
     #[account(init, payer = creator, space = PollData::size())]
     pub poll_data: Account<'info, PollData>,
+    #[account(mut)]
+    pub polls_counter_account: Account<'info, PollsCounter>,
     pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct Vote<'info> {
+    #[account(mut)]
+    pub voter: Signer<'info>,
+    #[account(mut)]
+    pub poll_data: Account<'info, PollData>,
+    #[account(mut)]
+    pub votes_data: Account<'info, VotesData>,
 }
 
 #[account]
@@ -40,8 +124,8 @@ pub struct PollData {
 }
 
 #[account]
-pub struct PollsLen {
-    pub len: u64,
+pub struct PollsCounter {
+    pub count: u64,
 }
 
 #[account]
@@ -69,6 +153,9 @@ impl PollData {
     }
 }
 
+
+
+
 #[error_code]
 pub enum ErrorCode {
     #[msg("Invalid option. Must be 0 or 1.")]
@@ -78,3 +165,20 @@ pub enum ErrorCode {
     #[msg("Invalid poll ID.")]
     InvalidPollId,
 }
+
+#[event]
+pub struct PollCreated {
+    pub poll_id: u64,
+    pub poll_topic: String,
+    pub poll_options: Vec<String>,
+    pub creator: Pubkey,
+}
+
+#[event]
+pub struct PollVoted {
+    pub poll_id: u64,
+    pub voter: Pubkey,
+    pub option: u64,
+}
+
+

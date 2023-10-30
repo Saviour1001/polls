@@ -9,6 +9,25 @@ describe("griffy-polls", () => {
 
   const program = anchor.workspace.GriffyPolls as Program<GriffyPolls>;
 
+  const pollsCounter = anchor.web3.Keypair.generate();
+
+  it("Initializes the polls", async () => {
+    const tx = await program.methods
+      .initializePollsCounter()
+      .accounts({
+        pollsCounter: pollsCounter.publicKey,
+        systemProgram: anchor.web3.SystemProgram.programId,
+      })
+      .signers([pollsCounter])
+      .rpc();
+
+    const pollsCounterAccount = await program.account.pollsCounter.fetch(
+      pollsCounter.publicKey
+    );
+
+    assert.equal(pollsCounterAccount.count as unknown as number, 0);
+  });
+
   it("Creates a poll", async () => {
     const randomAccount = anchor.web3.Keypair.generate();
 
@@ -17,6 +36,7 @@ describe("griffy-polls", () => {
       .accounts({
         pollData: randomAccount.publicKey,
         systemProgram: anchor.web3.SystemProgram.programId,
+        pollsCounterAccount: pollsCounter.publicKey,
       })
       .signers([randomAccount])
       .rpc();
