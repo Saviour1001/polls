@@ -49,4 +49,22 @@ describe("griffy-polls", () => {
     assert.equal(pollData.pollOptions[0], "Red");
     assert.equal(pollData.pollOptions[1], "Blue");
   });
+
+  it("votes on a poll", async () => {
+    const randomAccount = anchor.web3.Keypair.generate();
+
+    const tx = await program.methods
+      .vote(new anchor.BN(0), new anchor.BN(1))
+      .accounts({
+        pollData: randomAccount.publicKey,
+      })
+      .signers([randomAccount])
+      .rpc();
+
+    const pollData = await program.account.pollData.fetch(
+      randomAccount.publicKey
+    );
+
+    assert.equal(pollData.voters[0], randomAccount.publicKey);
+  });
 });
